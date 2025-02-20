@@ -1,0 +1,85 @@
+#EKSCTL Commands for a Small KeyCloak Server
+##Great Article: https://joachim8675309.medium.com/eks-ebs-storage-with-eksctl-3e526f534215
+
+##Set ENV Variables
+
+#ENV Variables to Set
+export EKS_CLUSTER_NAME="harness-partner-expert-kc"
+export EKS_REGION="us-east-2"
+export EKS_VERSION="1.30"
+
+export ROLE_NAME="${EKS_CLUSTER_NAME}_EBS_CSI_DriverRole"
+export ACCOUNT_ID=$(aws sts get-caller-identity \
+  --query "Account" \
+  --output text
+)
+export ACCOUNT_ROLE_ARN="arn:aws:iam::$ACCOUNT_ID:role/$ROLE_NAME"
+
+#Create Cluster
+eksctl create cluster \
+--name $EKS_CLUSTER_NAME \
+--version $EKS_VERSION \
+--region $EKS_REGION \
+--nodegroup-name standard-workers \
+--node-type t3.medium \
+--nodes 1 \
+--nodes-min 1 \
+--nodes-max 1 \
+--node-ami-family AmazonLinux2 
+
+#If needed the deployed cluster
+aws eks --region harness-partner-expert-kc update-kubeconfig --name harness-partner-expert-kc
+
+#Install OIDC
+eksctl utils associate-iam-oidc-provider \
+  --cluster $EKS_CLUSTER_NAME \
+  --region $EKS_REGION \
+  --approve
+
+#Associate Service Account
+# AWS managed policy for CSI driver SA to make EBS API calls
+POLICY_ARN="arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+
+# AWS IAM role bound to a Kubernetes service account
+eksctl create iamserviceaccount \
+  --name "ebs-csi-controller-sa" \
+  --namespace "kube-system" \
+  --cluster $EKS_CLUSTER_NAME \
+  --region $EKS_REGION \
+  --attach-policy-arn $POLICY_ARN \
+  --role-only \
+  --role-name $ROLE_NAME \
+  --approve
+
+#Install Storage Driver
+eksctl create addon \
+  --name "aws-ebs-csi-driver" \
+  --cluster $EKS_CLUSTER_NAME \
+  --region=$EKS_REGION \
+  --service-account-role-arn $ACCOUNT_ROLE_ARN \
+  --force
+
+kubectl get pod -n kube-system -l "app.kubernetes.io/name=aws-ebs-csi-driver,app.kubernetes.io/instance=aws-ebs-csi-driver"
+kubectl get all -l app.kubernetes.io/name=aws-ebs-csi-driver -n kube-system
+
+#Apply YAML
+kubectl apply -f keycloak_eks.yaml
+
+#Get Service Address
+kubectl get services -n harnessexpert-keycloak
+e.g aae142bb0a8a643799fb3ef507075c52-472649670.us-east-2.elb.amazonaws.com
+
+#Delete Cluster
+eksctl delete addon \
+  --name "aws-ebs-csi-driver" \
+  --cluster $EKS_CLUSTER_NAME \
+  --region $EKS_REGION
+
+  eksctl delete iamserviceaccount \
+  --name "ebs-csi-controller-sa" \
+  --namespace "kube-system" \
+  --cluster $EKS_CLUSTER_NAME
+
+  eksctl delete cluster \
+  --region $EKS_REGION \
+  --name $EKS_CLUSTER_NAME

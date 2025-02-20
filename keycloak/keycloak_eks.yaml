@@ -1,0 +1,264 @@
+# This is designed for the Expert Labs on Amazon EKS
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: harnessexpert-keycloak
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials-and-env
+  namespace: harnessexpert-keycloak
+type: Opaque
+stringData:
+  POSTGRES_USER: admin-pg-user
+  POSTGRES_PASSWORD: adminpg.1234
+  POSTGRES_DB: keycloak
+  PGDATA: /var/lib/postgresql/data/pgdata
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-secrets
+  namespace: harnessexpert-keycloak
+type: Opaque
+stringData:
+  KEYCLOAK_ADMIN: admin-expert-kc-user
+  KEYCLOAK_ADMIN_PASSWORD: adminkc.1234
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ebs-sc
+  namespace: harnessexpert-keycloak
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  type: gp2
+  fsType: ext4
+---
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: postgres-data
+  labels:
+    type: local
+spec:
+  storageClassName: ebs-sc
+  capacity:
+    storage: 2Gi
+  local:
+    path: /var/lib/postgresql/data
+  persistentVolumeReclaimPolicy: Retain
+  accessModes:
+    - ReadWriteOnce
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+          - key: app
+            operator: In
+            values:
+              - postgres
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc-ebs
+  namespace: harnessexpert-keycloak
+  labels:
+    app: postgres
+spec:
+  storageClassName: ebs-sc
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: harnessexpert-keycloak
+  labels:
+    app: postgres
+spec:
+  ports:
+  - port: 5432
+    name: postgres
+  selector:
+    app: postgres
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: harnessexpert-keycloak
+spec:
+  selector:
+    matchLabels:
+      app: postgres
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - image: postgres:17.4
+        imagePullPolicy: "IfNotPresent"
+        name: postgres
+        envFrom:
+          - secretRef:
+              name: postgres-credentials-and-env
+        ports:
+        - containerPort: 5432
+          name: postgres
+        securityContext:
+          privileged: false
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        resources:
+            limits:
+              memory: 768Mi
+              cpu: "1"
+            requests:
+              memory: 512Mi
+              cpu: "0.2"
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc-ebs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: harnessexpert-keycloak
+  labels:
+    app: keycloak
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+  - name: https
+    port: 443
+    targetPort: 8443
+  selector:
+    app: keycloak
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: harnessexpert-keycloak
+  labels:
+    app: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+      - name: keycloak
+        image: quay.io/keycloak/keycloak:26.1.1
+        imagePullPolicy: "IfNotPresent"
+        args: ["start-dev"]
+        env:
+        - name: KEYCLOAK_ADMIN
+          valueFrom:
+            secretKeyRef:
+              key: KEYCLOAK_ADMIN
+              name: keycloak-secrets
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: KEYCLOAK_ADMIN_PASSWORD
+              name: keycloak-secrets
+        - name: KC_PROXY
+          value: "edge"
+        - name: KC_PROXY_HEADERS
+          value: "xforwarded"
+        - name: KC_HEALTH_ENABLED
+          value: "true"
+        - name: KC_HTTP_ENABLED
+          value: "true"
+        - name: KC_HOSTNAME_STRICT_BACKCHANNEL
+          value: "false"
+        - name: KC_HOSTNAME_STRICT
+          value: "false"
+        - name: KC_LOG_LEVEL
+          value: INFO
+        - name: KC_DB
+          value: postgres
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials-and-env
+              key: POSTGRES_DB
+        - name: KC_DB_URL
+          value: jdbc:postgresql://postgres/$(POSTGRES_DB)
+        - name: KC_DB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials-and-env
+              key: POSTGRES_USER
+        - name: KC_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials-and-env
+              key: POSTGRES_PASSWORD
+        ports:
+        - containerPort: 8080 
+          name: http
+          protocol: TCP
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8080
+          initialDelaySeconds: 50
+          periodSeconds: 30
+        resources:
+            limits:
+              memory: 768Mi
+              cpu: "1"
+            requests:
+              memory: 512Mi
+              cpu: "0.2"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: harnessexpert-keycloak
+  labels:
+    app: keycloak
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  selector:
+    app: keycloak
+  type: LoadBalancer
