@@ -27,8 +27,19 @@ eksctl create cluster \
 --nodes-max 1 \
 --node-ami-family AmazonLinux2 
 
+###If No Need for Persistant PVC / Not Long Durability
+
+#Apply YAML
+kubectl apply -f keycloak_eks_no_durable_pvc.yaml
+
+#Get Service Address
+kubectl get services -n harnessexpert-keycloak
+e.g aae142bb0a8a643799fb3ef507075c52-472649670.us-east-2.elb.amazonaws.com:8080
+
 #If needed the deployed cluster
 aws eks --region harness-partner-expert-kc update-kubeconfig --name harness-partner-expert-kc
+
+###If Need for Persistant PVC / Long Durability
 
 #Install OIDC
 eksctl utils associate-iam-oidc-provider \
@@ -67,7 +78,7 @@ kubectl apply -f keycloak_eks.yaml
 
 #Get Service Address
 kubectl get services -n harnessexpert-keycloak
-e.g aae142bb0a8a643799fb3ef507075c52-472649670.us-east-2.elb.amazonaws.com
+e.g aae142bb0a8a643799fb3ef507075c52-472649670.us-east-2.elb.amazonaws.com:8080
 
 #Delete Cluster
 eksctl delete addon \

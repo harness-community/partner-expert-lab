@@ -170,18 +170,6 @@ spec:
         - containerPort: 8443
           name: https
           protocol: TCP
-        readinessProbe:
-          httpGet:
-            path: /health/ready
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        livenessProbe:
-          httpGet:
-            path: /health/live
-            port: 8080
-          initialDelaySeconds: 50
-          periodSeconds: 30
         resources:
             limits:
               memory: 768Mi
