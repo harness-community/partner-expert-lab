@@ -38,7 +38,7 @@ eksctl utils associate-iam-oidc-provider \
 
 #Associate Service Account
 # AWS managed policy for CSI driver SA to make EBS API calls
-POLICY_ARN="arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+export POLICY_ARN="arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 
 # AWS IAM role bound to a Kubernetes service account
 eksctl create iamserviceaccount \
