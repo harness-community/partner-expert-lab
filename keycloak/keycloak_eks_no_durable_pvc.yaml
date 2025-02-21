@@ -27,45 +27,6 @@ stringData:
   KEYCLOAK_ADMIN: admin-expert-kc-user
   KEYCLOAK_ADMIN_PASSWORD: adminkc.1234
 ---
-kind: PersistentVolume
-apiVersion: v1
-metadata:
-  name: postgres-data
-  labels:
-    type: local
-spec:
-  storageClassName: manual
-  capacity:
-    storage: 2Gi
-  local:
-    path: /var/lib/postgresql/data
-  persistentVolumeReclaimPolicy: Retain
-  accessModes:
-    - ReadWriteOnce
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-        - matchExpressions:
-          - key: app
-            operator: In
-            values:
-              - postgres
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: postgres-pvc-ebs
-  namespace: harnessexpert-keycloak
-  labels:
-    app: postgres
-spec:
-  storageClassName: manual
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
----
 apiVersion: v1
 kind: Service
 metadata:
@@ -98,7 +59,7 @@ spec:
         app: postgres
     spec:
       containers:
-      - image: postgres:17.4
+      - image: postgres:17.3
         imagePullPolicy: "IfNotPresent"
         name: postgres
         envFrom:
@@ -109,9 +70,6 @@ spec:
           name: postgres
         securityContext:
           privileged: false
-        volumeMounts:
-        - name: postgres-storage
-          mountPath: /var/lib/postgresql/data
         resources:
             limits:
               memory: 768Mi
@@ -119,10 +77,6 @@ spec:
             requests:
               memory: 512Mi
               cpu: "0.2"
-      volumes:
-      - name: postgres-storage
-        persistentVolumeClaim:
-          claimName: postgres-pvc-ebs
 ---
 apiVersion: v1
 kind: Service

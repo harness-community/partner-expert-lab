@@ -109,7 +109,7 @@ spec:
         app: postgres
     spec:
       containers:
-      - image: postgres:17.4
+      - image: postgres:17.3
         imagePullPolicy: "IfNotPresent"
         name: postgres
         envFrom:
